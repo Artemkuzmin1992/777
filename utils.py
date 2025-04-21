@@ -3,7 +3,7 @@ import numpy as np
 
 def convert_table_format(df, source_marketplace, target_marketplace):
     """
-    Конвертирует таблицу из формата одного маркетплейса в другой.
+    Конвертирует таблицу из формата одного маркетплейса в другой с сопоставлением колонок.
     
     Args:
         df (pd.DataFrame): Исходная таблица
@@ -14,24 +14,21 @@ def convert_table_format(df, source_marketplace, target_marketplace):
         pd.DataFrame: Конвертированная таблица
     """
     # Создаем копию исходной таблицы для работы
-    result_df = df.copy()
+    df_source = df.copy()
     
-    # Базовая реализация конвертации
-    # Здесь можно добавить логику маппинга колонок для разных маркетплейсов
-    
-    # Для упрощенной версии просто добавляем информационную колонку
-    result_df["converted_from"] = source_marketplace
-    result_df["converted_to"] = target_marketplace
-    result_df["conversion_info"] = f"Конвертировано из {source_marketplace} в {target_marketplace}"
-    
-    # Базовый маппинг колонок для разных маркетплейсов
-    column_mappings = {
+    # Словари соответствия колонок для каждого маркетплейса
+    marketplace_column_maps = {
         "Ozon": {
-            "ID": "product_id",
+            "ID товара": "product_id",
             "Артикул": "sku",
             "Название": "title",
             "Цена": "price",
             "Остаток": "stock",
+            "Бренд": "brand",
+            "Категория": "category",
+            "Описание": "description",
+            "Изображение": "image_url",
+            "Штрихкод": "barcode"
         },
         "Wildberries": {
             "Номенклатура": "product_id",
@@ -39,13 +36,23 @@ def convert_table_format(df, source_marketplace, target_marketplace):
             "Предмет": "title",
             "Цена СП": "price",
             "Остаток": "stock",
+            "Бренд": "brand",
+            "Категория": "category",
+            "Описание": "description",
+            "Медиафайлы": "image_url",
+            "Баркод": "barcode"
         },
         "ЛеманПро": {
-            "ID": "product_id",
+            "ID товара": "product_id",
             "Артикул": "sku",
             "Наименование": "title",
             "Цена": "price",
             "Количество": "stock",
+            "Бренд": "brand",
+            "Категория": "category",
+            "Описание товара": "description",
+            "Фото": "image_url",
+            "Штрихкод": "barcode"
         },
         "Яндекс.Маркет": {
             "marketSku": "product_id",
@@ -53,6 +60,11 @@ def convert_table_format(df, source_marketplace, target_marketplace):
             "title": "title",
             "price": "price",
             "stock": "stock",
+            "vendor": "brand",
+            "categoryName": "category",
+            "description": "description",
+            "imageUrl": "image_url",
+            "barcode": "barcode"
         },
         "Все инструменты": {
             "Код товара": "product_id",
@@ -60,6 +72,11 @@ def convert_table_format(df, source_marketplace, target_marketplace):
             "Наименование": "title",
             "Цена": "price",
             "Наличие": "stock",
+            "Производитель": "brand",
+            "Категория": "category",
+            "Описание": "description",
+            "Изображение": "image_url",
+            "Штрихкод": "barcode"
         },
         "СберМегаМаркет": {
             "ID": "product_id",
@@ -67,42 +84,150 @@ def convert_table_format(df, source_marketplace, target_marketplace):
             "Наименование": "title",
             "Цена продажи": "price",
             "Остаток": "stock",
+            "Бренд": "brand",
+            "Категория": "category",
+            "Описание": "description",
+            "Ссылка на изображение": "image_url",
+            "Штрихкод": "barcode"
         }
     }
     
-    # Пример простой конвертации (для полноценной реализации нужен более сложный код)
-    # Это просто демонстрационная функция
-    try:
-        # Если мы можем определить формат исходных данных, пытаемся конвертировать
-        if source_marketplace in column_mappings and target_marketplace in column_mappings:
-            # Создаем временные стандартизированные колонки
-            source_mapping = column_mappings[source_marketplace]
-            target_mapping = column_mappings[target_marketplace]
-            
-            # Инвертируем словарь маппинга целевого формата
-            inv_target_mapping = {v: k for k, v in target_mapping.items()}
-            
-            # Создаем новый DataFrame для результата
-            new_df = pd.DataFrame()
-            
-            # Для каждой колонки в исходных данных
-            for src_col, std_col in source_mapping.items():
-                if src_col in df.columns:
-                    # Если у целевого формата есть соответствующая колонка
-                    if std_col in inv_target_mapping:
-                        target_col = inv_target_mapping[std_col]
-                        new_df[target_col] = df[src_col]
-            
-            # Добавляем служебные колонки
-            new_df["conversion_info"] = f"Конвертировано из {source_marketplace} в {target_marketplace}"
-            
-            # Если мы успешно создали новый DataFrame, возвращаем его
-            if not new_df.empty:
-                return new_df
+    # Дополнительные колонки, которые могут отличаться в разных маркетплейсах
+    additional_columns = {
+        "Ozon": {
+            "Вес упаковки, г": "weight",
+            "Ширина упаковки, мм": "package_width",
+            "Высота упаковки, мм": "package_height",
+            "Длина упаковки, мм": "package_length",
+            "Ссылка на товар": "product_url"
+        },
+        "Wildberries": {
+            "Вес": "weight",
+            "Ширина": "package_width",
+            "Высота": "package_height",
+            "Длина": "package_length",
+            "Ссылка": "product_url",
+            "Размер": "size"
+        },
+        "ЛеманПро": {
+            "Вес, г": "weight",
+            "Ширина, мм": "package_width",
+            "Высота, мм": "package_height",
+            "Длина, мм": "package_length",
+            "Ссылка на товар": "product_url"
+        },
+        "Яндекс.Маркет": {
+            "weight": "weight",
+            "width": "package_width",
+            "height": "package_height",
+            "length": "package_length",
+            "url": "product_url"
+        },
+        "Все инструменты": {
+            "Вес (кг)": "weight",
+            "Ширина (см)": "package_width",
+            "Высота (см)": "package_height",
+            "Длина (см)": "package_length",
+            "Ссылка на карточку": "product_url"
+        },
+        "СберМегаМаркет": {
+            "Вес": "weight",
+            "Ширина": "package_width",
+            "Высота": "package_height",
+            "Длина": "package_length",
+            "Ссылка": "product_url"
+        }
+    }
     
-    except Exception as e:
-        # В случае ошибки в конвертации, возвращаем исходный DataFrame с информацией
-        print(f"Ошибка конвертации: {str(e)}")
+    # Объединяем основные и дополнительные колонки
+    for marketplace in marketplace_column_maps:
+        marketplace_column_maps[marketplace].update(additional_columns.get(marketplace, {}))
     
-    # Если конвертация не удалась, возвращаем исходный DataFrame с информацией
-    return result_df
+    # Получаем маппинги для исходного и целевого маркетплейсов
+    source_map = marketplace_column_maps.get(source_marketplace, {})
+    target_map = marketplace_column_maps.get(target_marketplace, {})
+    
+    # Если не удалось найти маппинги, возвращаем исходную таблицу с информацией
+    if not source_map or not target_map:
+        df_source["conversion_info"] = f"Не удалось найти маппинг для {source_marketplace} или {target_marketplace}"
+        return df_source
+    
+    # Создаем словарь для обратного маппинга целевого маркетплейса
+    target_reverse_map = {v: k for k, v in target_map.items()}
+    
+    # Создаем промежуточный DataFrame с унифицированными колонками
+    df_unified = pd.DataFrame()
+    
+    # Маппим колонки из исходного формата в унифицированный
+    for src_col, unified_col in source_map.items():
+        if src_col in df_source.columns:
+            df_unified[unified_col] = df_source[src_col]
+    
+    # Создаем результирующий DataFrame с колонками целевого маркетплейса
+    df_target = pd.DataFrame()
+    
+    # Маппим из унифицированного формата в целевой
+    for unified_col, target_col in target_reverse_map.items():
+        if unified_col in df_unified.columns:
+            df_target[target_col] = df_unified[unified_col]
+        else:
+            # Если унифицированная колонка отсутствует, заполняем значением по умолчанию
+            df_target[target_col] = ""
+    
+    # Добавляем информационные колонки
+    df_target["Исходный формат"] = source_marketplace
+    df_target["Целевой формат"] = target_marketplace
+    df_target["Дата конвертации"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Проверяем соответствие структуры, чтобы избежать ошибок
+    if df_target.empty and not df_source.empty:
+        # Если что-то пошло не так, возвращаем исходную таблицу с информацией
+        df_source["conversion_info"] = f"Ошибка при конвертации из {source_marketplace} в {target_marketplace}"
+        return df_source
+    
+    return df_target
+
+def get_marketplace_columns(marketplace):
+    """
+    Возвращает список ожидаемых колонок для указанного маркетплейса.
+    
+    Args:
+        marketplace (str): Название маркетплейса
+        
+    Returns:
+        list: Список названий колонок
+    """
+    marketplace_columns = {
+        "Ozon": [
+            "ID товара", "Артикул", "Название", "Цена", "Остаток", "Бренд", 
+            "Категория", "Описание", "Изображение", "Штрихкод", "Вес упаковки, г", 
+            "Ширина упаковки, мм", "Высота упаковки, мм", "Длина упаковки, мм", "Ссылка на товар"
+        ],
+        "Wildberries": [
+            "Номенклатура", "Артикул поставщика", "Предмет", "Цена СП", "Остаток", 
+            "Бренд", "Категория", "Описание", "Медиафайлы", "Баркод", "Вес", 
+            "Ширина", "Высота", "Длина", "Ссылка", "Размер"
+        ],
+        "ЛеманПро": [
+            "ID товара", "Артикул", "Наименование", "Цена", "Количество", "Бренд", 
+            "Категория", "Описание товара", "Фото", "Штрихкод", "Вес, г", 
+            "Ширина, мм", "Высота, мм", "Длина, мм", "Ссылка на товар"
+        ],
+        "Яндекс.Маркет": [
+            "marketSku", "vendorCode", "title", "price", "stock", "vendor", 
+            "categoryName", "description", "imageUrl", "barcode", "weight", 
+            "width", "height", "length", "url"
+        ],
+        "Все инструменты": [
+            "Код товара", "Артикул", "Наименование", "Цена", "Наличие", "Производитель", 
+            "Категория", "Описание", "Изображение", "Штрихкод", "Вес (кг)", 
+            "Ширина (см)", "Высота (см)", "Длина (см)", "Ссылка на карточку"
+        ],
+        "СберМегаМаркет": [
+            "ID", "Артикул", "Наименование", "Цена продажи", "Остаток", "Бренд", 
+            "Категория", "Описание", "Ссылка на изображение", "Штрихкод", "Вес", 
+            "Ширина", "Высота", "Длина", "Ссылка"
+        ]
+    }
+    
+    return marketplace_columns.get(marketplace, [])
