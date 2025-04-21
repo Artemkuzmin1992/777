@@ -5,16 +5,13 @@ import os
 import sys
 import io
 from datetime import datetime
-import time
-import zipfile
 import base64
 
-# Создаем базовый путь для работы с относительными путями
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Создаем необходимые папки
-for folder in ["data", "static", "backups"]:
-    os.makedirs(os.path.join(BASE_DIR, folder), exist_ok=True)
+# Определяем базовый путь безопасным способом
+try:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    BASE_DIR = os.getcwd()
 
 # Настройка страницы
 st.set_page_config(
@@ -25,13 +22,24 @@ st.set_page_config(
 
 # Блок для всего приложения в try-except
 try:
+    # Пытаемся создать необходимые папки
+    try:
+        for folder in ["data", "static", "backups"]:
+            folder_path = os.path.join(BASE_DIR, folder)
+            os.makedirs(folder_path, exist_ok=True)
+    except Exception as e:
+        st.warning(f"Информация: {str(e)}")
+        # Продолжаем работу без создания папок
+
     # Импорт модулей
     try:
+        sys.path.append(BASE_DIR)
         from marketplace_detection import detect_marketplace
         from utils import convert_table_format
-    except ImportError as e:
-        st.error(f"Ошибка импорта модулей: {str(e)}")
-        st.stop()
+        st.sidebar.success("Модули успешно импортированы")
+    except Exception as e:
+        st.sidebar.error(f"Ошибка импорта модулей: {str(e)}")
+        # Можно продолжить с минимальной функциональностью
     
     # Заголовок и описание
     st.title("ProductTableManager")
@@ -50,13 +58,13 @@ try:
         
         try:
             if marketplace in logo_paths:
-                full_path = os.path.join(BASE_DIR, logo_paths[marketplace])
-                if os.path.exists(full_path):
-                    return st.image(full_path, width=100)
+                logo_path = os.path.join(BASE_DIR, logo_paths[marketplace])
+                if os.path.exists(logo_path):
+                    return st.image(logo_path, width=100)
                 else:
-                    st.warning(f"Логотип не найден по пути: {full_path}")
+                    st.info(f"Логотип не найден по пути: {logo_path}")
         except Exception as e:
-            st.warning(f"Не удалось загрузить логотип {marketplace}: {str(e)}")
+            st.info(f"Не удалось загрузить логотип {marketplace}")
     
     # Функция для создания загружаемого файла
     def create_download_link(df, filename):
@@ -98,15 +106,7 @@ try:
     
     if uploaded_file is not None:
         try:
-            # Сохраняем файл
-            original_filename = uploaded_file.name
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = os.path.join(BASE_DIR, "data", f"original_{timestamp}_{original_filename}")
-            
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            # Читаем Excel
+            # Чтение Excel-файла
             df = pd.read_excel(uploaded_file)
             
             # Если DataFrame пустой или имеет проблемы
@@ -119,11 +119,15 @@ try:
             st.dataframe(df.head())
             
             # Определяем маркетплейс
-            detected_marketplace = detect_marketplace(df)
-            if detected_marketplace:
-                st.success(f"Обнаружен формат маркетплейса: {detected_marketplace}")
-            else:
-                st.warning("Не удалось определить формат маркетплейса автоматически.")
+            try:
+                detected_marketplace = detect_marketplace(df)
+                if detected_marketplace:
+                    st.success(f"Обнаружен формат маркетплейса: {detected_marketplace}")
+                else:
+                    st.warning("Не удалось определить формат маркетплейса автоматически.")
+                    detected_marketplace = "Unknown"
+            except Exception as e:
+                st.warning(f"Ошибка при определении маркетплейса: {str(e)}")
                 detected_marketplace = "Unknown"
             
             # Конвертируем данные
@@ -146,16 +150,13 @@ try:
                         st.dataframe(converted_df.head())
                         
                         # Создаем ссылку для скачивания
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         converted_filename = f"converted_{detected_marketplace}_to_{target_marketplace}_{timestamp}.xlsx"
                         download_link = create_download_link(converted_df, converted_filename)
                         
                         if download_link:
                             st.markdown(download_link, unsafe_allow_html=True)
-                            
-                            # Сохраняем конвертированный файл
-                            converted_path = os.path.join(BASE_DIR, "data", converted_filename)
-                            converted_df.to_excel(converted_path, index=False)
-                            st.success(f"Файл успешно конвертирован и сохранен!")
+                            st.success(f"Файл успешно конвертирован!")
                     except Exception as e:
                         st.error(f"Ошибка конвертации: {str(e)}")
         
@@ -186,11 +187,28 @@ try:
         Версия: 1.0
         """)
 
+    # Отладочная информация в сайдбаре
+    with st.sidebar:
+        with st.expander("Отладочная информация"):
+            st.write(f"Python версия: {sys.version}")
+            st.write(f"Текущая директория: {BASE_DIR}")
+            
+            try:
+                st.write(f"Файлы в директории: {[f for f in os.listdir(BASE_DIR) if os.path.isfile(os.path.join(BASE_DIR, f))]}")
+            except Exception as e:
+                st.write(f"Не удалось получить список файлов: {str(e)}")
+
 except Exception as e:
     st.error("Произошла непредвиденная ошибка!")
     st.error(f"Тип ошибки: {type(e).__name__}")
     st.error(f"Сообщение об ошибке: {str(e)}")
+    
+    # Отладочная информация
     st.write(f"Python версия: {sys.version}")
     st.write(f"Текущая директория: {os.getcwd()}")
-    st.write(f"Список файлов в директории: {os.listdir()}")
+    try:
+        st.write(f"Список файлов в директории: {os.listdir()}")
+    except:
+        st.write("Не удалось получить список файлов")
+    
     st.exception(e)
